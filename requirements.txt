@@ -1,0 +1,12 @@
+langchain>=0.3
+langgraph>=0.2.60
+langchain-openai>=0.2
+langchain-community>=0.3
+langchain-tavily>=0.1
+langchain-chroma>=0.1.4
+chromadb>=0.5
+pypdf>=5.0
+yfinance>=0.2.50
+python-dotenv>=1.0
+requests>=2.32
+pydantic>=2.9
