@@ -69,7 +69,7 @@ flowchart TD
 
 ## 2. 프로젝트 구조
 
-​```
+```
 stock-agent/
 ├── main.py                 # CLI 엔트리포인트 (개발/디버깅용, 그래프 직접 호출)
 ├── server.py               # FastAPI 웹 서버 (프론트 서빙 + /api/chat 엔드포인트)
@@ -94,13 +94,13 @@ stock-agent/
 │   └── builder.py          # StateGraph 배선 + MemorySaver
 └── middleware/
     └── guards.py           # 에러 핸들링 데코레이터 + Disclaimer 노드
-​```
+```
 
 ---
 
 ## 3. 설치 및 실행
 
-​```bash
+```bash
 # 1) 의존성 설치
 pip install -r requirements.txt
 
@@ -108,15 +108,15 @@ pip install -r requirements.txt
 cp .env.example .env
 #   → OPENAI_API_KEY, TAVILY_API_KEY 입력
 #   → KIS 키 발급 전이면 BROKER_PROVIDER=mock 유지
-​```
+```
 
 첫 실행 시 HuggingFace Hub에서 FinShibainu 데이터셋(약 100MB)이 자동 다운로드되어 로컬 캐시(`~/.cache/huggingface/`)에 저장되고, Chroma 벡터 DB(`.chroma/`)가 프로젝트 루트에 생성됩니다. 두 번째 실행부터는 캐시를 재사용하여 즉시 시작됩니다.
 
 ### 3.1 웹 UI 실행 (권장)
 
-​```bash
+```bash
 python server.py
-​```
+```
 
 브라우저에서 `http://127.0.0.1:8000` 접속. 첫 화면의 예시 질문 4개를 눌러 그래프의 모든 분기(tool_use / knowledge / portfolio / chat)를 시연할 수 있습니다.
 
@@ -127,9 +127,9 @@ python server.py
 
 ### 3.2 CLI 실행 (개발/디버깅용)
 
-​```bash
+```bash
 python main.py
-​```
+```
 
 RAG 검색 결과(`[RAG DEBUG]` 로그)와 State 원본을 콘솔에서 직접 확인할 수 있어 파이프라인 디버깅에 편리합니다.
 
