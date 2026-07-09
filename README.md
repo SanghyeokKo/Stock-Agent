@@ -69,12 +69,15 @@ flowchart TD
 
 ## 2. 프로젝트 구조
 
-```
+​```
 stock-agent/
-├── main.py                 # CLI 엔트리포인트 (멀티턴 데모)
+├── main.py                 # CLI 엔트리포인트 (개발/디버깅용, 그래프 직접 호출)
+├── server.py               # FastAPI 웹 서버 (프론트 서빙 + /api/chat 엔드포인트)
 ├── config.py               # .env 로드 및 전역 설정
 ├── state.py                # LangGraph AgentState 정의
 ├── schemas.py              # Pydantic 구조화 출력 스키마
+├── web/                    # 🌐 브라우저 프론트엔드
+│   └── index.html          #   심플 채팅 UI (마크다운 렌더링 + 포트폴리오 카드)
 ├── brokers/                # 🔑 증권사 추상화 계층 (Adapter Pattern)
 │   ├── base.py             #   BrokerClient(ABC) + Quote/Position DTO
 │   ├── kis.py              #   한국투자증권 모의투자 어댑터
@@ -91,13 +94,13 @@ stock-agent/
 │   └── builder.py          # StateGraph 배선 + MemorySaver
 └── middleware/
     └── guards.py           # 에러 핸들링 데코레이터 + Disclaimer 노드
-```
+​```
 
 ---
 
 ## 3. 설치 및 실행
 
-```bash
+​```bash
 # 1) 의존성 설치
 pip install -r requirements.txt
 
@@ -105,12 +108,30 @@ pip install -r requirements.txt
 cp .env.example .env
 #   → OPENAI_API_KEY, TAVILY_API_KEY 입력
 #   → KIS 키 발급 전이면 BROKER_PROVIDER=mock 유지
+​```
 
-# 3) 실행 (첫 실행 시 FinShibainu 데이터셋 자동 다운로드 및 벡터 인덱싱)
+첫 실행 시 HuggingFace Hub에서 FinShibainu 데이터셋(약 100MB)이 자동 다운로드되어 로컬 캐시(`~/.cache/huggingface/`)에 저장되고, Chroma 벡터 DB(`.chroma/`)가 프로젝트 루트에 생성됩니다. 두 번째 실행부터는 캐시를 재사용하여 즉시 시작됩니다.
+
+### 3.1 웹 UI 실행 (권장)
+
+​```bash
+python server.py
+​```
+
+브라우저에서 `http://127.0.0.1:8000` 접속. 첫 화면의 예시 질문 4개를 눌러 그래프의 모든 분기(tool_use / knowledge / portfolio / chat)를 시연할 수 있습니다.
+
+- **마크다운 자동 렌더링**: LLM 답변의 표·굵은글씨·코드블록을 정리해서 표시
+- **포트폴리오 카드**: 리밸런싱 응답의 JSON을 종목별 카드 UI로 시각화
+- **intent 태그**: 각 답변 상단에 `intent: portfolio` 등으로 라우팅 결과 노출 (그래프 흐름 시연용)
+- **thread_id 유지**: localStorage로 저장하여 새로고침 후에도 대화 이력 연속. 우측 상단 "새 대화" 버튼으로 리셋
+
+### 3.2 CLI 실행 (개발/디버깅용)
+
+​```bash
 python main.py
-```
+​```
 
-첫 실행 시 HuggingFace Hub에서 데이터셋(약 100MB)이 자동 다운로드되어 로컬 캐시(`~/.cache/huggingface/`)에 저장되고, Chroma 벡터 DB(`.chroma/`)가 프로젝트 루트에 생성됩니다. 두 번째 실행부터는 캐시를 재사용하여 즉시 시작됩니다.
+RAG 검색 결과(`[RAG DEBUG]` 로그)와 State 원본을 콘솔에서 직접 확인할 수 있어 파이프라인 디버깅에 편리합니다.
 
 ### 시나리오 예시
 
