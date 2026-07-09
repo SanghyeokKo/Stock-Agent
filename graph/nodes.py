@@ -37,14 +37,36 @@ def agent_node(state: AgentState) -> dict:
 
 
 def rag_node(state: AgentState) -> dict:
-    """지식 질문(RAG) 노드 — 투자 가이드북 기반 근거 답변."""
     question = state["messages"][-1].content
     docs = get_retriever().invoke(question)
-    context = "\n\n".join(d.page_content for d in docs)
+    # ── 검색 결과 로깅 (RAG 동작 확인용) ─────────────
+    print("\n" + "=" * 60)
+    print(f"[RAG DEBUG] 질문: {question}")
+    print(f"[RAG DEBUG] 검색된 문서 {len(docs)}개:")
+    for i, d in enumerate(docs, 1):
+        source = d.metadata.get("source", "?")
+        row_id = d.metadata.get("row_id", "?")
+        preview = d.page_content[:150].replace("\n", " ")
+        print(f"  [{i}] source={source} row_id={row_id}")
+        print(f"      {preview}...")
+    print("=" * 60 + "\n")
+
+    context = "\n\n---\n\n".join(d.page_content for d in docs)
     response = _llm.invoke([
-        ("system", "아래 [투자 가이드 자료]에 근거해서만 답하고, 자료에 없으면 "
-                   "모른다고 말하라. 답변 끝에 참고한 자료 요지를 한 줄로 요약하라."),
-        ("user", f"[투자 가이드 자료]\n{context}\n\n[질문]\n{question}"),
+        ("system",
+         "너는 투자 지식 어시스턴트다. 아래 [참고 자료]에 근거해서만 답하라. "
+         "각 문장 끝에 어떤 자료 번호에서 왔는지 [자료 1], [자료 2] 형식으로 "
+         "반드시 표기하라. 참고 자료에 없는 내용은 절대 추가하지 말고, "
+         "관련 내용이 전혀 없으면 '자료에서 찾지 못했다'고만 답하라. "
+         "답변 맨 끝에 '📚 출처: 한국은행 경제금융용어 700선 (row_id: X, Y, Z)' 형식으로 "
+         "참고한 자료의 row_id를 명시하라."),
+        ("user",
+         f"[참고 자료]\n"
+         + "\n\n---\n\n".join(
+             f"[자료 {i+1}] (row_id={d.metadata.get('row_id')})\n{d.page_content}"
+             for i, d in enumerate(docs)
+         )
+         + f"\n\n[질문]\n{question}"),
     ])
     return {"messages": [response]}
 
