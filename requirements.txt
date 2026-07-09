@@ -26,3 +26,7 @@ requests>=2.32                  # KIS/Toss API 호출
 # ===== 유틸 =====
 python-dotenv>=1.0
 pydantic>=2.9
+
+# ===== 프론트 =====
+fastapi>=0.115
+uvicorn[standard]>=0.30

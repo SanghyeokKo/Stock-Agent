@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>주식 투자 가이드 에이전트</title>
+<!-- 마크다운 파서 (LLM 답변에 마크다운이 자주 포함되므로) -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic",
+                 "맑은 고딕", sans-serif;
+    background: #f5f6f8;
+    color: #1a1a1a;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+
+  /* ── 헤더 ───────────────────────────────────────── */
+  header {
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 { font-size: 16px; font-weight: 600; }
+  header h1 .subtitle { font-weight: 400; color: #6b7280; margin-left: 8px; }
+  #new-chat-btn {
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    color: #374151;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #new-chat-btn:hover { background: #e5e7eb; }
+  .thread-badge {
+    font-size: 11px;
+    color: #9ca3af;
+    margin-right: 12px;
+    font-family: ui-monospace, monospace;
+  }
+
+  /* ── 채팅 영역 ─────────────────────────────────── */
+  #chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .msg {
+    max-width: 780px;
+    width: 100%;
+    margin: 0 auto;
+    display: flex;
+    gap: 12px;
+  }
+  .avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .msg.user .avatar { background: #dbeafe; }
+  .msg.bot .avatar  { background: #e0e7ff; }
+  .bubble {
+    padding: 12px 16px;
+    border-radius: 12px;
+    line-height: 1.6;
+    font-size: 14.5px;
+    max-width: 100%;
+    overflow-wrap: break-word;
+  }
+  .msg.user .bubble { background: #eff6ff; border: 1px solid #dbeafe; }
+  .msg.bot  .bubble { background: #fff;    border: 1px solid #e5e7eb; }
+  .intent-tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: #ede9fe;
+    color: #6d28d9;
+    margin-bottom: 8px;
+    font-family: ui-monospace, monospace;
+  }
+
+  /* 마크다운 스타일 */
+  .bubble h1, .bubble h2, .bubble h3 { margin: 12px 0 6px; font-weight: 600; }
+  .bubble h3 { font-size: 15px; }
+  .bubble p { margin: 6px 0; }
+  .bubble ul, .bubble ol { margin: 6px 0 6px 20px; }
+  .bubble code {
+    background: #f3f4f6;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: ui-monospace, monospace;
+  }
+  .bubble pre {
+    background: #1f2937;
+    color: #f9fafb;
+    padding: 12px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 8px 0;
+  }
+  .bubble pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    font-size: 12.5px;
+  }
+  .bubble hr { border: none; border-top: 1px solid #e5e7eb; margin: 12px 0; }
+
+  /* Disclaimer 강조 */
+  .bubble p:has(+ hr) + hr + p:last-child {
+    background: #fef3c7;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #92400e;
+    margin-top: 8px;
+  }
+
+  /* ── 포트폴리오 카드 (structured_output) ─────── */
+  .portfolio-card {
+    margin-top: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    padding: 14px;
+    background: #fafafa;
+  }
+  .portfolio-card h4 {
+    font-size: 13px;
+    color: #6b7280;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .portfolio-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 12px;
+    padding: 10px 0;
+    border-bottom: 1px dashed #e5e7eb;
+  }
+  .portfolio-row:last-child { border-bottom: none; }
+  .portfolio-row .name { font-weight: 600; font-size: 14px; }
+  .portfolio-row .weight {
+    background: #dbeafe;
+    color: #1e40af;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    align-self: start;
+  }
+  .portfolio-row .point {
+    grid-column: 1 / -1;
+    font-size: 13px;
+    color: #4b5563;
+    margin-top: 4px;
+  }
+  .portfolio-summary {
+    margin-top: 12px;
+    padding: 10px;
+    background: #eff6ff;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #1e40af;
+  }
+
+  /* ── 로딩 표시 ─────────────────────────────────── */
+  .typing {
+    display: flex;
+    gap: 4px;
+    padding: 8px 0;
+  }
+  .typing span {
+    width: 8px; height: 8px;
+    background: #9ca3af;
+    border-radius: 50%;
+    animation: bounce 1.4s infinite ease-in-out both;
+  }
+  .typing span:nth-child(1) { animation-delay: -0.32s; }
+  .typing span:nth-child(2) { animation-delay: -0.16s; }
+  @keyframes bounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+  }
+
+  /* ── 입력 영역 ─────────────────────────────────── */
+  #input-area {
+    background: #fff;
+    border-top: 1px solid #e5e7eb;
+    padding: 16px 24px;
+  }
+  #input-wrap {
+    max-width: 780px;
+    margin: 0 auto;
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+  #input {
+    flex: 1;
+    resize: none;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 14.5px;
+    font-family: inherit;
+    line-height: 1.5;
+    max-height: 160px;
+    outline: none;
+  }
+  #input:focus { border-color: #3b82f6; }
+  #send-btn {
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    height: 42px;
+  }
+  #send-btn:hover:not(:disabled) { background: #1d4ed8; }
+  #send-btn:disabled { background: #9ca3af; cursor: not-allowed; }
+
+  .hint {
+    max-width: 780px;
+    margin: 8px auto 0;
+    font-size: 11px;
+    color: #9ca3af;
+    text-align: center;
+  }
+
+  /* ── 예시 질문 (첫 화면) ──────────────────────── */
+  .examples {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 20px;
+    text-align: center;
+  }
+  .examples h2 {
+    font-size: 18px;
+    margin-bottom: 8px;
+    color: #374151;
+  }
+  .examples p { color: #6b7280; margin-bottom: 20px; font-size: 14px; }
+  .example-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+  }
+  .example-btn {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+    color: #374151;
+    transition: all 0.15s;
+  }
+  .example-btn:hover {
+    border-color: #3b82f6;
+    background: #eff6ff;
+  }
+  .example-btn .tag {
+    display: block;
+    font-size: 10px;
+    color: #6b7280;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📈 주식 투자 가이드 <span class="subtitle">LangGraph Agent Demo</span></h1>
+  <div style="display:flex; align-items:center;">
+    <span class="thread-badge" id="thread-badge">thread: -</span>
+    <button id="new-chat-btn" onclick="newChat()">새 대화</button>
+  </div>
+</header>
+
+<div id="chat">
+  <div class="examples" id="examples">
+    <h2>무엇을 도와드릴까요?</h2>
+    <p>아래 예시를 눌러보거나 자유롭게 질문해보세요.</p>
+    <div class="example-grid">
+      <button class="example-btn" onclick="askExample('삼성전자 지금 얼마야?')">
+        <span class="tag">시세 조회</span>
+        삼성전자 지금 얼마야?
+      </button>
+      <button class="example-btn" onclick="askExample('테슬라 최근 뉴스 요약해줘')">
+        <span class="tag">뉴스 검색</span>
+        테슬라 최근 뉴스 요약해줘
+      </button>
+      <button class="example-btn" onclick="askExample('DSR과 DTA의 차이가 뭐야?')">
+        <span class="tag">투자 지식 (RAG)</span>
+        DSR과 DTA의 차이가 뭐야?
+      </button>
+      <button class="example-btn" onclick="askExample('삼성전자 20%, SK하이닉스 30%로 리밸런싱 추천해줘')">
+        <span class="tag">포트폴리오 제안</span>
+        삼성전자 20%, SK하이닉스 30% 리밸런싱
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="input-area">
+  <div id="input-wrap">
+    <textarea id="input" rows="1" placeholder="질문을 입력하세요 (Enter: 전송, Shift+Enter: 줄바꿈)"></textarea>
+    <button id="send-btn" onclick="send()">전송</button>
+  </div>
+  <p class="hint">본 답변은 정보 제공 목적이며 투자 권유가 아닙니다.</p>
+</div>
+
+<script>
+  // ── 상태 관리 ────────────────────────────────
+  const STORAGE_KEY = "stock_agent_thread_id";
+  let threadId = localStorage.getItem(STORAGE_KEY) || null;
+
+  function updateThreadBadge() {
+    document.getElementById("thread-badge").textContent =
+      threadId ? `thread: ${threadId}` : "thread: -";
+  }
+  updateThreadBadge();
+
+  function newChat() {
+    threadId = null;
+    localStorage.removeItem(STORAGE_KEY);
+    updateThreadBadge();
+    document.getElementById("chat").innerHTML = "";
+    // 예시 버튼 복원
+    location.reload();
+  }
+
+  // ── 메시지 렌더링 ───────────────────────────
+  function addMessage(role, content, extras = {}) {
+    // 첫 메시지가 들어오면 예시 화면 제거
+    const examples = document.getElementById("examples");
+    if (examples) examples.remove();
+
+    const chat = document.getElementById("chat");
+    const msg = document.createElement("div");
+    msg.className = `msg ${role}`;
+
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.textContent = role === "user" ? "🙋" : "🤖";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+
+    if (extras.intent) {
+      const tag = document.createElement("div");
+      tag.className = "intent-tag";
+      tag.textContent = `intent: ${extras.intent}`;
+      bubble.appendChild(tag);
+    }
+
+    const body = document.createElement("div");
+    if (role === "bot") {
+      // 마크다운 파싱
+      body.innerHTML = marked.parse(content);
+    } else {
+      body.textContent = content;
+    }
+    bubble.appendChild(body);
+
+    // 포트폴리오 카드 (structured_output이 있으면)
+    if (extras.structured_output) {
+      bubble.appendChild(renderPortfolioCard(extras.structured_output));
+    }
+
+    msg.appendChild(avatar);
+    msg.appendChild(bubble);
+    chat.appendChild(msg);
+    chat.scrollTop = chat.scrollHeight;
+    return msg;
+  }
+
+  function renderPortfolioCard(data) {
+    const card = document.createElement("div");
+    card.className = "portfolio-card";
+    card.innerHTML = "<h4>📊 포트폴리오 제안</h4>";
+
+    (data.추천목록 || []).forEach(item => {
+      const row = document.createElement("div");
+      row.className = "portfolio-row";
+      row.innerHTML = `
+        <span class="name">${escapeHtml(item.종목명)}</span>
+        <span class="weight">${item.추천비중}%</span>
+        <div class="point">${escapeHtml(item.투자포인트)}</div>
+      `;
+      card.appendChild(row);
+    });
+
+    if (data.총평) {
+      const summary = document.createElement("div");
+      summary.className = "portfolio-summary";
+      summary.textContent = "💡 " + data.총평;
+      card.appendChild(summary);
+    }
+    return card;
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+
+  // ── 서버 통신 ────────────────────────────────
+  async function send() {
+    const input = document.getElementById("input");
+    const text = input.value.trim();
+    if (!text) return;
+
+    const sendBtn = document.getElementById("send-btn");
+    input.value = "";
+    input.style.height = "auto";
+    sendBtn.disabled = true;
+
+    addMessage("user", text);
+
+    // 로딩 표시
+    const loadingMsg = addMessage("bot", "");
+    const bubble = loadingMsg.querySelector(".bubble");
+    bubble.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+
+    try {
+      const resp = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, thread_id: threadId }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: "서버 오류" }));
+        throw new Error(err.detail || `HTTP ${resp.status}`);
+      }
+
+      const data = await resp.json();
+
+      // thread_id 저장 (첫 응답에서 서버가 발급)
+      threadId = data.thread_id;
+      localStorage.setItem(STORAGE_KEY, threadId);
+      updateThreadBadge();
+
+      // 로딩 메시지 제거 후 실제 답변으로 교체
+      loadingMsg.remove();
+      addMessage("bot", data.reply, {
+        intent: data.intent,
+        structured_output: data.structured_output,
+      });
+    } catch (e) {
+      loadingMsg.remove();
+      addMessage("bot", `❌ 오류: ${e.message}`);
+    } finally {
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  }
+
+  function askExample(text) {
+    document.getElementById("input").value = text;
+    send();
+  }
+
+  // ── 입력 이벤트 ─────────────────────────────
+  const inputEl = document.getElementById("input");
+  inputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  });
+  // 자동 높이 조절
+  inputEl.addEventListener("input", () => {
+    inputEl.style.height = "auto";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + "px";
+  });
+</script>
+</body>
+</html>
