@@ -1,12 +1,28 @@
+# ===== LangChain 코어 =====
 langchain>=0.3
-langgraph>=0.2.60
+langchain-classic>=0.1          # EnsembleRetriever (langchain.retrievers에서 분리됨)
 langchain-openai>=0.2
-langchain-community>=0.3
+langchain-community>=0.3        # BM25Retriever, PyMuPDFLoader (sunset 예정이나 당분간 필요)
 langchain-tavily>=0.1
 langchain-chroma>=0.1.4
+langchain-text-splitters>=0.3   # RecursiveCharacterTextSplitter (명시적 선언)
+
+# ===== LangGraph =====
+langgraph>=0.2.60
+
+# ===== Vector DB =====
 chromadb>=0.5
-pypdf>=5.0
-yfinance>=0.2.50
+
+# ===== Retriever =====
+rank_bm25>=0.2.2                # BM25Retriever가 내부적으로 사용
+
+# ===== Dataset =====
+datasets>=3.0                   # HuggingFace FinShibainu 데이터셋 로드
+
+# ===== 증권사 API / 시세 =====
+yfinance>=0.2.50                # BROKER_PROVIDER=mock 폴백용
+requests>=2.32                  # KIS/Toss API 호출
+
+# ===== 유틸 =====
 python-dotenv>=1.0
-requests>=2.32
 pydantic>=2.9
