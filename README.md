@@ -1,6 +1,6 @@
 # 📈 오픈 API 기반 국내/해외 주식 통합 투자 가이드 및 포트폴리오 관리 에이전트
 
-LangChain + LangGraph 기반의 자율 투자 가이드 에이전트입니다. 사용자의 자연어 질문 의도를 스스로 분류하여 **실시간 시세/잔고 조회(한국투자증권 Open API)**, **최신 뉴스 검색(Tavily)**, **투자 지식 RAG**, **구조화된 포트폴리오 제안(JSON)** 중 최적의 경로로 자율 실행합니다.
+LangChain + LangGraph 기반의 자율 투자 가이드 에이전트입니다. 사용자의 자연어 질문 의도를 스스로 분류하여 **실시간 시세/잔고 조회(한국투자증권 Open API)**, **최신 뉴스 검색(Tavily)**, **투자 지식 RAG(FinShibainu 데이터셋)**, **구조화된 포트폴리오 제안(JSON)** 중 최적의 경로로 자율 실행합니다.
 
 ---
 
@@ -13,7 +13,7 @@ flowchart TD
     START([START]) --> ROUTER["router\n(gpt-4o-mini 의도 분류)"]
 
     ROUTER -->|"intent = tool_use"| AGENT["agent\n(gpt-4o + bind_tools)\n자율적 도구 선택"]
-    ROUTER -->|"intent = knowledge"| RAG["rag\n(Chroma 벡터 검색\n→ 근거 기반 답변)"]
+    ROUTER -->|"intent = knowledge"| RAG["rag\n(BM25 + Vector 하이브리드 검색\n→ 출처 인용 답변)"]
     ROUTER -->|"intent = portfolio"| PORT["portfolio\n(Pydantic + Strict JSON Mode\n구조화 출력)"]
     ROUTER -->|"intent = chat"| CHAT["chat\n(일반 대화)"]
 
@@ -40,15 +40,24 @@ flowchart TD
 
 ### 1.2 데이터 흐름
 
-1. **router**: `gpt-4o-mini` + Pydantic 구조화 출력으로 사용자 의도를 `tool_use / knowledge / portfolio / chat` 4종 중 하나로 분류하고 `State.intent`에 기록합니다.
+1. **router**: `gpt-4o-mini` + Pydantic 구조화 출력으로 사용자 의도를 `tool_use / knowledge / portfolio / chat` 4종 중 하나로 분류하고 `State.intent`에 기록합니다. 이 노드는 매 턴 시작 시 `structured_output`과 `tool_error` 필드를 `None`으로 초기화하여 이전 턴의 부산물이 다음 답변에 누출되지 않도록 합니다.
 2. **조건부 분기 #1**: `add_conditional_edges("router", route_selector, ...)`가 intent에 따라 4개 노드로 흐름을 분기합니다.
 3. **agent ↔ tools (ReAct 루프)**: `gpt-4o`가 질문을 보고 시세·잔고·뉴스 도구를 **자율적으로 선택**합니다. **조건부 분기 #2**(`tools_condition`)가 tool_call 존재 여부로 루프 지속/종료를 결정합니다.
-4. **rag**: Chroma 벡터 DB에서 투자 가이드 문서를 검색하여 근거 기반으로만 답변합니다.
+4. **rag**: BM25(키워드) + Vector(의미) **하이브리드 검색**으로 관련 QA 문서를 검색하고, 검색된 문서의 `row_id`를 답변에 인용(citation)하여 **환각 검증이 가능한 근거 기반 답변**을 생성합니다.
 5. **portfolio**: OpenAI **Strict JSON Mode**(`method="json_schema", strict=True`)로 `{"종목명", "추천비중", "투자포인트"}` 스키마를 100% 준수하는 JSON을 생성합니다.
 6. **disclaimer (미들웨어)**: 모든 종단 경로가 강제 통과하는 노드로, 마지막 AI 메시지에 투자 위험 안내 문구를 삽입합니다.
 7. **MemorySaver checkpointer**: `thread_id` 단위로 전체 State를 체크포인팅하여 멀티턴 대화 맥락을 유지합니다.
 
-### 1.3 Phase 1 → Phase 2 전환을 고려한 구조적 설계
+### 1.3 RAG 파이프라인 상세
+
+지식 베이스로는 **KRX(한국거래소) LLM 경진대회 수상작인 [aiqwe/FinShibainu](https://huggingface.co/datasets/aiqwe/FinShibainu) 데이터셋의 `qa` subset**을 활용합니다. 이 데이터셋은 한국은행 『경제금융용어 700선』, 시사경제용어사전 등 국내 공식 금융 자료를 원문(reference)으로 삼아 구축된 QA 선호도 데이터셋으로, `preference` 컬럼이 지정하는 우수 답변을 지식 문서로 채택합니다.
+
+- **원본 PDF 대비 이점**: 임베디드 폰트 서브셋 문제로 PyPDF/PyMuPDF/OCR 모두 한글 추출에 실패하는 원본 자료 대신, 이미 정제된 검증 데이터셋을 사용하여 **재현성**과 **답변 신뢰성**을 동시에 확보합니다.
+- **하이브리드 검색**: 금융 용어는 정확한 키워드 매칭이 의미 유사도보다 유용한 경우가 많으므로, LangChain `EnsembleRetriever`로 BM25(가중치 0.5)와 Chroma 벡터 검색(가중치 0.5)을 결합합니다. `PER`, `DSR`, `DTA` 같은 영어 약어는 BM25가, 자연어 개념 질문은 벡터 검색이 강점을 발휘합니다.
+- **인용(Citation) 강제**: `rag_node`는 검색된 각 문서에 `[자료 N]` 태그를 부여하여 프롬프트에 전달하고, LLM이 답변 내 근거 문장마다 이를 참조하고 말미에 `📚 출처: 한국은행 경제금융용어 700선 (row_id: X)` 형식을 명시하도록 지시합니다.
+- **개발 디버깅**: `rag_node`는 검색 결과의 `source`, `row_id`, 내용 프리뷰를 콘솔에 출력하여 RAG 동작을 육안으로 검증할 수 있습니다.
+
+### 1.4 Phase 1 → Phase 2 전환을 고려한 구조적 설계
 
 | 변경 대상 | 변경 방법 | 상위 코드 영향 |
 |---|---|---|
@@ -75,9 +84,9 @@ stock-agent/
 │   ├── stock_tools.py      # Tool 1: 시세/잔고 조회 (@tool)
 │   └── news_tools.py       # Tool 2: Tavily 뉴스 검색 (@tool)
 ├── rag/
-│   └── pipeline.py         # PDF 로드 → 분할 → Chroma 인덱싱 → retriever
+│   └── pipeline.py         # FinShibainu 로드 → BM25+Vector 하이브리드 검색
 ├── graph/
-│   ├── router.py           # 의도 분류 + 조건부 분기 selector
+│   ├── router.py           # 의도 분류 + 조건부 분기 selector + State 초기화
 │   ├── nodes.py            # agent / rag / portfolio / chat 노드
 │   └── builder.py          # StateGraph 배선 + MemorySaver
 └── middleware/
@@ -97,13 +106,11 @@ cp .env.example .env
 #   → OPENAI_API_KEY, TAVILY_API_KEY 입력
 #   → KIS 키 발급 전이면 BROKER_PROVIDER=mock 유지
 
-# 3) (선택) RAG 문서 배치
-#   금융감독원/한국거래소 투자 가이드북 PDF를 data/financial_guide.pdf 로 저장
-#   없으면 내장 투자 용어 사전으로 자동 폴백
-
-# 4) 실행
+# 3) 실행 (첫 실행 시 FinShibainu 데이터셋 자동 다운로드 및 벡터 인덱싱)
 python main.py
 ```
+
+첫 실행 시 HuggingFace Hub에서 데이터셋(약 100MB)이 자동 다운로드되어 로컬 캐시(`~/.cache/huggingface/`)에 저장되고, Chroma 벡터 DB(`.chroma/`)가 프로젝트 루트에 생성됩니다. 두 번째 실행부터는 캐시를 재사용하여 즉시 시작됩니다.
 
 ### 시나리오 예시
 
@@ -111,8 +118,8 @@ python main.py
 |---|---|
 | "삼성전자 지금 얼마야?" | router → agent → tools(get_stock_quote) → agent → disclaimer |
 | "테슬라 관련 최근 뉴스 요약해줘" | router → agent → tools(search_finance_news) → agent → disclaimer |
-| "PER이 뭐야? PBR이랑 뭐가 달라?" | router → rag → disclaimer |
-| "내 계좌 기준으로 리밸런싱 추천해줘" | router → portfolio(구조화 JSON) → disclaimer |
+| "DSR과 DTA의 차이가 뭐야?" | router → rag(BM25+Vector 검색 + 출처 인용) → disclaimer |
+| "삼성전자 20%, SK하이닉스 30%로 리밸런싱 추천해줘" | router → portfolio(Strict JSON) → disclaimer |
 
 ---
 
@@ -121,7 +128,7 @@ python main.py
 | 요구사항 | 구현 위치 |
 |---|---|
 | 자율적 도구 선택 (Tool ≥ 2) | `tools/stock_tools.py`(시세·잔고), `tools/news_tools.py`(뉴스) + `graph/nodes.py`의 `bind_tools` |
-| RAG 파이프라인 ≥ 1 | `rag/pipeline.py` (PDF → RecursiveCharacterTextSplitter → Chroma → retriever) |
+| RAG 파이프라인 ≥ 1 | `rag/pipeline.py` (FinShibainu 데이터셋 → BM25 + Chroma Vector 하이브리드 검색 → 인용 기반 답변) |
 | 대화 이력 유지 (Memory) | `graph/builder.py`의 `MemorySaver` checkpointer + `thread_id` |
 | StateGraph + 조건부 분기 ≥ 1 | `builder.py`에 조건부 엣지 **2개** (intent 라우팅, tools_condition) |
 | Disclaimer 미들웨어 | `middleware/guards.py`의 `disclaimer_node` (모든 종단 경로 강제 통과) |
@@ -131,33 +138,83 @@ python main.py
 
 ---
 
-## 5. 한계점 및 향후 개선 방향
+## 5. 개발 과정에서의 주요 엔지니어링 결정
 
-### 5.1 현재 한계점 (Phase 1)
+### 5.1 RAG 데이터 소스 전환 (PDF → 검증된 공개 데이터셋)
+
+초기에는 한국은행 『경제금융용어 700선』 PDF를 직접 인덱싱하려 했으나, 해당 PDF가 임베디드 폰트 서브셋과 특수 CMap을 사용하여 표준 텍스트 추출 도구(PyPDF, PyMuPDF)로는 한글 추출이 불가능했습니다. OCR(RapidOCR) 폴백을 구현하여 이미지→텍스트 변환을 시도했으나, OCR 결과에서 영어와 페이지 구조는 유지되는 반면 한글이 중국어/깨진 문자로 오인식되는 문제가 발생했습니다.
+
+이 문제를 LLM 재작성으로 우회하는 것은 **RAG의 근본 원칙인 '검증 가능한 원문 기반 답변'을 훼손**한다고 판단하여, 동일한 원문 계보를 갖는 검증된 공개 데이터셋(FinShibainu)을 지식 베이스로 채택했습니다. 이 결정으로 얻은 이점은 다음과 같습니다.
+
+- **재현성**: PDF/OCR 환경 의존성 제거. `pip install` 만으로 어떤 환경에서든 동일한 지식 베이스 구축 가능
+- **품질 검증**: 데이터셋이 DPO(Direct Preference Optimization) 학습용으로 만들어졌기 때문에 `preference`와 `value` 컬럼으로 답변 품질이 이미 라벨링되어 있어, 우수 답변만 선별하여 인덱싱 가능
+- **원문 계보 유지**: 데이터셋의 `reference` 컬럼이 원본 자료명을 보존하므로 답변 출처를 사용자에게 그대로 노출 가능
+
+### 5.2 RAG 인용 시스템 도입
+
+RAG가 검색한 문서가 실제로 답변에 사용됐는지, 아니면 LLM이 자체 지식으로 답한 것인지 개발 초기에는 검증할 수 없었습니다. 이를 해결하기 위해 두 층의 검증 레이어를 도입했습니다.
+
+- **개발자 레이어**: `rag_node`가 검색된 각 문서의 `source`, `row_id`, 프리뷰를 콘솔에 출력하여 개발자가 육안 검증
+- **사용자 레이어**: LLM 프롬프트에 각 참고 자료를 `[자료 N] (row_id=X)` 형식으로 나열하고, 답변 내 근거 문장마다 `[자료 N]`을 인용하며 말미에 `📚 출처`를 명시하도록 강제
+
+이 방식은 표준 RAG 아키텍처의 **grounding & citation** 원칙을 구현한 것으로, 사용자가 답변의 진위를 원문 대조로 확인할 수 있게 합니다.
+
+### 5.3 State 격리 원칙
+
+라우터 노드가 매 턴 시작 시 `structured_output`, `tool_error`를 `None`으로 초기화하도록 설계했습니다. LangGraph의 State는 명시적으로 덮어쓰지 않으면 이전 턴 값이 유지되는데, 포트폴리오 노드가 남긴 JSON이 이후 뉴스/RAG 답변에도 함께 노출되는 부작용을 개발 중 발견하여 수정한 결과입니다.
+
+---
+
+## 6. 한계점 및 향후 개선 방향
+
+### 6.1 현재 한계점 (Phase 1)
 
 - **모의투자 환경 의존**: 한국투자증권 모의투자 API는 일부 TR(해외 잔고 등)의 지원 범위가 실전과 다르고, 토큰 발급 rate limit(분당 1회)이 존재합니다. 토큰 파일 캐싱으로 완화했으나 다중 프로세스 환경에서는 별도 토큰 스토어가 필요합니다.
 - **In-Memory Checkpointer**: `MemorySaver`는 프로세스 재시작 시 대화 이력이 소실됩니다. 운영 전환 시 `SqliteSaver`/`PostgresSaver`로 교체가 필요합니다(인터페이스 동일, 한 줄 교체).
 - **라우터의 단발 분류**: 복합 의도("시세 보고 리밸런싱까지")는 현재 단일 intent로 축약됩니다. Phase 2에서 멀티스텝 플래너로 확장 예정입니다.
-- **RAG 문서 커버리지**: 현재는 단일 가이드북(또는 내장 용어 사전) 기반이라 최신 공시·리포트는 다루지 못합니다.
+- **RAG 데이터셋 필터링 비용**: 매 실행 시 전체 44,870행을 순회해 한국은행 자료(약 979개)로 필터링하는 오버헤드가 있습니다. 필터링 결과를 로컬 JSON 캐시로 저장하는 최적화가 가능합니다.
+- **RAG 커버리지**: 현재는 한국은행 경제금융용어 700선 카테고리만 활성화되어 있어 시사 이슈나 최신 규제 변화는 다루지 못합니다. `TARGET_REFERENCES`에 다른 소스를 추가하거나, Tavily 뉴스 검색과 RAG를 결합한 하이브리드 답변 전략이 필요합니다.
 
-### 5.2 향후 개선 방향 ① — 토스증권 API 전면 전환 계획
+### 6.2 향후 개선 방향 ① — 토스증권 API 전면 전환 계획
 
 본 프로젝트는 **처음부터 증권사 교체를 전제로 설계**되었습니다. 모든 도구와 노드는 구체 클래스가 아닌 `BrokerClient` 추상 인터페이스(`brokers/base.py`)에만 의존하며(DIP, 의존성 역전 원칙), 증권사별 응답 포맷 차이는 어댑터 내부에서 표준 DTO(`Quote`, `Position`)로 정규화됩니다.
 
 토스증권 API 키 발급 시 전환 절차는 다음 3단계로 완결됩니다.
 
-1. `brokers/toss.py`에 `BrokerClient`를 구현한 `TossBrokerClient` 작성 — 인증 방식과 엔드포인트 차이는 이 파일 안에 완전히 캡슐화됩니다.
-2. `brokers/factory.py`의 `_REGISTRY`에 `"toss": TossBrokerClient` **한 줄 등록**.
-3. `.env`에서 `BROKER_PROVIDER=toss`로 변경.
+1. `brokers/toss.py`에 `BrokerClient`를 구현한 `TossBrokerClient` 작성 — OAuth 2.0 Client Credentials Grant 인증과 `X-Tossinvest-Account` 헤더 처리를 이 파일 안에 완전히 캡슐화
+2. `brokers/factory.py`의 `_REGISTRY`에 `"toss": TossBrokerClient` **한 줄 등록**
+3. `.env`에서 `BROKER_PROVIDER=toss`로 변경
 
 이 과정에서 LangGraph 노드, `@tool` 시그니처, 프롬프트, 테스트 코드는 **단 한 줄도 수정되지 않습니다**. 실제로 이 구조는 Phase 1 개발 중 이미 검증되었습니다 — KIS 키 발급 대기 기간 동안 `MockBrokerClient`(yfinance)로 전체 그래프를 개발/디버깅한 뒤, 환경 변수 변경만으로 KIS 어댑터로 전환했기 때문입니다. 즉 Mock ↔ KIS 전환이 곧 KIS ↔ Toss 전환의 리허설입니다.
 
-### 5.3 향후 개선 방향 ② — Phase 2: Claude 3.5 Sonnet 기반 자율 에이전트 고도화
+### 6.3 향후 개선 방향 ② — Phase 2: Claude 3.5 Sonnet 기반 자율 에이전트 고도화
 
 - **LLM 교체 비용 최소화 설계**: 모든 LLM 호출이 LangChain 표준 인터페이스(`bind_tools`, `with_structured_output`, `invoke`)로만 이루어지므로, `ChatOpenAI` → `ChatAnthropic` 교체(또는 `init_chat_model("anthropic:claude-3-5-sonnet")` 도입)만으로 마이그레이션됩니다. OpenAI 전용 기능인 Strict JSON Mode 구간은 Anthropic tool-use 기반 구조화 출력으로 대체하되, Pydantic 스키마는 그대로 재사용합니다.
 - **고차원 자율 의사결정**: 계좌 잔고 확인 → 뉴스 트렌드 종합 분석 → 리스크 관리 규칙(예: 단일 종목 30% 상한, 손실률 임계치) 기반 자산 재배분 제안까지 이어지는 멀티스텝 플래닝 루프를 LangGraph 서브그래프로 추가할 계획입니다.
 - **Human-in-the-Loop 안전장치**: 실제 주문(매수/매도) 도구를 도입하는 시점에는 LangGraph의 `interrupt` 기능으로 주문 실행 직전 사용자 승인을 강제하여, 자율성과 안전성을 동시에 확보합니다.
-- **운영 관측성**: LangSmith 트레이싱을 연동해 도구 선택 정확도, 라우팅 오분류율, API 실패율을 정량 측정하고 라우터 프롬프트를 반복 개선합니다.
+- **운영 관측성**: LangSmith 트레이싱을 연동해 도구 선택 정확도, 라우팅 오분류율, API 실패율, RAG 검색 재현율(Recall@k)을 정량 측정하고 라우터 프롬프트와 하이브리드 검색 가중치를 반복 개선합니다.
+
+---
+
+## 7. 참고 데이터셋 및 라이선스
+
+본 프로젝트의 RAG 지식 베이스는 다음 공개 데이터셋을 활용합니다.
+
+- **Dataset**: [aiqwe/FinShibainu](https://huggingface.co/datasets/aiqwe/FinShibainu)
+- **GitHub**: [aiqwe/FinShibainu](https://github.com/aiqwe/FinShibainu)
+- **License**: Apache License 2.0
+- **Original Sources**: 한국은행 『경제금융용어 700선』, 시사경제용어사전 외
+
+```
+@misc{jaylee2024finshibainu,
+  author = {Jay Lee},
+  title = {FinShibainu: Korean specified finance model},
+  year = {2024},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  url = {https://github.com/aiqwe/FinShibainu}
+}
+```
 
 ---
 
