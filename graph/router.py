@@ -45,7 +45,10 @@ def route_node(state: AgentState) -> dict:
     decision: RouteDecision = _classifier.invoke(
         [("system", _ROUTER_PROMPT)] + state["messages"][-6:]  # 최근 맥락만
     )
-    return {"intent": decision.intent}
+    return {"intent": decision.intent,
+            "structured_output": None,
+            "tool_error": None,
+            }
 
 
 def route_selector(state: AgentState) -> str:
