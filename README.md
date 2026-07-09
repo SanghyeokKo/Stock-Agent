@@ -137,6 +137,7 @@ RAG 검색 결과(`[RAG DEBUG]` 로그)와 State 원본을 콘솔에서 직접 �
 
 | 입력 | 경로 |
 |---|---|
+| "내 주식 잔고 얼마야?" | router → agent → tools(get_account_balance) → agent → disclaimer |
 | "삼성전자 지금 얼마야?" | router → agent → tools(get_stock_quote) → agent → disclaimer |
 | "테슬라 관련 최근 뉴스 요약해줘" | router → agent → tools(search_finance_news) → agent → disclaimer |
 | "DSR과 DTA의 차이가 뭐야?" | router → rag(BM25+Vector 검색 + 출처 인용) → disclaimer |
