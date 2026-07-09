@@ -1,3 +1,22 @@
+# ===== 시크릿 =====
 .env
-__pycache__
 .kis_token.json
+.toss_token.json
+
+# ===== 캐시/생성물 =====
+.chroma/
+data/*.ocr.json
+__pycache__/
+*.pyc
+
+# ===== IDE =====
+.vscode/
+.idea/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== Python =====
+*.egg-info/
+.pytest_cache/
