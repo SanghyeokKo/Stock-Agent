@@ -378,11 +378,15 @@
       tag.textContent = `intent: ${extras.intent}`;
       bubble.appendChild(tag);
     }
-
     const body = document.createElement("div");
     if (role === "bot") {
-      // 마크다운 파싱
-      body.innerHTML = marked.parse(content);
+      // structured_output이 카드 UI로 별도 표시되면 텍스트 안의 JSON 코드블록은
+      // 중복이므로 제거. 카드가 없을 때(다른 경로 답변)는 그대로 렌더링.
+      let displayContent = content;
+      if (extras.structured_output) {
+        displayContent = content.replace(/```json[\s\S]*?```/g, "").trim();
+      }
+      body.innerHTML = marked.parse(displayContent);
     } else {
       body.textContent = content;
     }
