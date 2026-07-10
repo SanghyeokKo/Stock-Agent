@@ -1,6 +1,6 @@
 # 📈 오픈 API 기반 국내/해외 주식 통합 투자 가이드 및 포트폴리오 관리 에이전트
 
-LangChain + LangGraph 기반의 자율 투자 가이드 에이전트입니다. 사용자의 자연어 질문 의도를 스스로 분류하여 **실시간 시세/잔고 조회(한국투자증권 Open API)**, **최신 뉴스 검색(Tavily)**, **투자 지식 RAG(FinShibainu 데이터셋)**, **구조화된 포트폴리오 제안(JSON)** 중 최적의 경로로 자율 실행합니다.
+LangChain + LangGraph 기반의 자율 투자 가이드 에이전트(챗봇)입니다. 사용자의 자연어 질문 의도를 스스로 분류하여 **실시간 시세/잔고 조회(한국투자증권 Open API)**, **최신 뉴스 검색(Tavily)**, **투자 지식 RAG(FinShibainu 데이터셋)**, **구조화된 포트폴리오 제안(JSON)** 중 최적의 경로로 자율 실행합니다.
 
 ---
 
@@ -63,7 +63,7 @@ flowchart TD
 |---|---|---|
 | 증권사 (KIS → 토스증권) | `brokers/toss.py` 구현 후 `factory.py`의 `_REGISTRY`에 **한 줄 등록** + `.env`의 `BROKER_PROVIDER=toss` | **없음** — `@tool`·노드·프롬프트는 `BrokerClient` 인터페이스에만 의존 |
 | LLM (gpt-4o → Claude 3.5 Sonnet) | `graph/nodes.py`의 `ChatOpenAI` → `ChatAnthropic` (또는 `init_chat_model`) 교체 | **최소** — `bind_tools`/`with_structured_output` 등 LangChain 표준 인터페이스만 사용 |
-| 개발 중 API 키 미발급 | `.env`의 `BROKER_PROVIDER=mock` | **없음** — yfinance/정적 Mock 어댑터가 동일 DTO 반환 |
+| 개발 중 API 키 미발급 | `.env`의 `BROKER_PROVIDER=mock`(kis 키 미발급 시 대체용 -> kis키 발급 후 mock 대신 kis로 변경) | **없음** — yfinance/정적 Mock 어댑터가 동일 DTO 반환 |
 
 ---
 
@@ -197,7 +197,7 @@ RAG가 검색한 문서가 실제로 답변에 사용됐는지, 아니면 LLM이
 - **RAG 데이터셋 필터링 비용**: 매 실행 시 전체 44,870행을 순회해 한국은행 자료(약 979개)로 필터링하는 오버헤드가 있습니다. 필터링 결과를 로컬 JSON 캐시로 저장하는 최적화가 가능합니다.
 - **RAG 커버리지**: 현재는 한국은행 경제금융용어 700선 카테고리만 활성화되어 있어 시사 이슈나 최신 규제 변화는 다루지 못합니다. `TARGET_REFERENCES`에 다른 소스를 추가하거나, Tavily 뉴스 검색과 RAG를 결합한 하이브리드 답변 전략이 필요합니다.
 
-### 6.2 향후 개선 방향 ① — 토스증권 API 전면 전환 계획
+### 6.2 향후 개선 방향 ① — Phase 2: 토스증권 API 전면 전환 계획
 
 본 프로젝트는 **처음부터 증권사 교체를 전제로 설계**되었습니다. 모든 도구와 노드는 구체 클래스가 아닌 `BrokerClient` 추상 인터페이스(`brokers/base.py`)에만 의존하며(DIP, 의존성 역전 원칙), 증권사별 응답 포맷 차이는 어댑터 내부에서 표준 DTO(`Quote`, `Position`)로 정규화됩니다.
 
